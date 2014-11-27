@@ -79,7 +79,8 @@
 #define MSMFB_WRITEBACK_SET_MIRRORING_HINT _IOW(MSMFB_IOCTL_MAGIC, 167, \
 						unsigned int)
 #define MSMFB_ASYNC_BLIT              _IOW(MSMFB_IOCTL_MAGIC, 168, unsigned int)
-
+#define MSMFB_OVERLAY_PREPARE		_IOWR(MSMFB_IOCTL_MAGIC, 169, \
+						struct mdp_overlay_list)
 #define FB_TYPE_3D_PANEL 0x10101010
 #define MDP_IMGTYPE2_START 0x10000
 #define MSMFB_DRIVER_VERSION	0xF9E8D701
@@ -194,6 +195,7 @@ enum {
 #define MDP_MEMORY_ID_TYPE_FB		0x00001000
 #define MDP_BWC_EN			0x00000400
 #define MDP_DECIMATION_EN		0x00000800
+#define MDP_SMP_FORCE_ALLOC		0x00200000
 #define MDP_TRANSP_NOP 0xffffffff
 #define MDP_ALPHA_NOP 0xff
 
@@ -528,6 +530,23 @@ struct mdp_scale_data {
 };
 
 /**
+ * enum mdp_overlay_pipe_type - Different pipe type set by userspace
+ *
+ * @PIPE_TYPE_AUTO:    Not specified, pipe will be selected according to flags.
+ * @PIPE_TYPE_VIG:     VIG pipe.
+ * @PIPE_TYPE_RGB:     RGB pipe.
+ * @PIPE_TYPE_DMA:     DMA pipe.
+ * @PIPE_TYPE_MAX:     Used to track maximum number of pipe type.
+ */
+enum mdp_overlay_pipe_type {
+        PIPE_TYPE_AUTO = 0,
+        PIPE_TYPE_VIG,
+        PIPE_TYPE_RGB,
+        PIPE_TYPE_DMA,
+        PIPE_TYPE_MAX,
+};
+
+/**
  * struct mdp_overlay - overlay surface structure
  * @src:	Source image information (width, height, format).
  * @src_rect:	Source crop rectangle, portion of image that will be fetched.
@@ -549,6 +568,7 @@ struct mdp_scale_data {
  *		The color should be in same format as the source image format.
  * @flags:	This is used to customize operation of overlay. See MDP flags
  *		for more information.
+ * @pipe_type:  Used to specify the type of overlay pipe.
  * @user_data:	DEPRECATED* Used to store user application specific information.
  * @bg_color:	Solid color used to fill the overlay surface when no source
  *		buffer is provided.
@@ -581,6 +601,7 @@ struct mdp_overlay {
 	uint32_t blend_op;
 	uint32_t transp_mask;
 	uint32_t flags;
+	uint32_t pipe_type;
 	uint32_t id;
 	uint32_t user_data[6];
 	uint32_t bg_color;
@@ -940,6 +961,7 @@ enum {
 	metadata_op_frame_rate,
 	metadata_op_vic,
 	metadata_op_wb_format,
+	metadata_op_wb_secure,
 	metadata_op_get_caps,
 	metadata_op_crc,
 	metadata_op_max
@@ -974,11 +996,13 @@ struct msmfb_metadata {
 		uint32_t panel_frame_rate;
 		uint32_t video_info_code;
 		struct mdss_hw_caps caps;
+		uint8_t secure_en;
 	} data;
 };
 
 #define MDP_MAX_FENCE_FD	32
 #define MDP_BUF_SYNC_FLAG_WAIT	1
+#define MDP_BUF_SYNC_FLAG_RETIRE_FENCE	0x10
 
 struct mdp_buf_sync {
 	uint32_t flags;
@@ -986,6 +1010,7 @@ struct mdp_buf_sync {
 	uint32_t session_id;
 	int *acq_fen_fd;
 	int *rel_fen_fd;
+	int *retire_fen_fd;
 };
 
 struct mdp_async_blit_req_list {
@@ -1009,6 +1034,24 @@ struct mdp_display_commit {
 	struct fb_var_screeninfo var;
 	struct mdp_buf_fence buf_fence;
 	struct mdp_rect roi;
+};
+
+/**
+* struct mdp_overlay_list - argument for ioctl MSMFB_OVERLAY_PREPARE
+* @num_overlays:	Number of overlay layers as part of the frame.
+* @overlay_list:	Pointer to a list of overlay structures identifying
+*			the layers as part of the frame
+* @flags:		Flags can be used to extend behavior.
+* @processed_overlays:	Output parameter indicating how many pipes were
+*			successful. If there are no errors this number should
+*			match num_overlays. Otherwise it will indicate the last
+*			successful index for overlay that couldn't be set.
+*/
+struct mdp_overlay_list {
+	uint32_t num_overlays;
+	struct mdp_overlay **overlay_list;
+	uint32_t flags;
+	uint32_t processed_overlays;
 };
 
 struct mdp_page_protection {
